@@ -14,7 +14,7 @@
 bl_info = {
     "name" : "SelectionObjects",
     "author" : "Pablo Tochez A.",
-    "description" : "Use a mesh/s to select verts",
+    "description" : "Use a selection mesh/s to select verts on active object",
     "blender" : (2, 80, 0),
     "version" : (0, 0, 1),
     "location" : "Edit Mode->select->selection objects",
