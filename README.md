@@ -1,6 +1,6 @@
 # Selection-Objects
 Blender add-on
-Use a selection mesh/s to select verts on an active object
+Use a selection mesh/s as a guide to select verts on another active object.
 
 **--How to Install--**
 * Click 'Clone or Download'
