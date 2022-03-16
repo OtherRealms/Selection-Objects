@@ -16,7 +16,7 @@ bl_info = {
     "author" : "Pablo Tochez A.",
     "description" : "Use a selection mesh/s to select verts on active object",
     "blender" : (2, 80, 0),
-    "version" : (0, 0, 1),
+    "version" : (0, 0, 2),
     "location" : "Edit Mode->select->selection objects",
     "warning" : "",
     "category" : "Mesh"
@@ -28,6 +28,7 @@ import bmesh
 from bpy.props import*
 from mathutils import Vector
 from mathutils.bvhtree import BVHTree
+import numpy as np
 
 positions = []
 obj_selection  = []
@@ -36,13 +37,13 @@ class MESH_OT_selection_object(bpy.types.Operator):
 
     bl_idname = "mesh.selection_object"
     bl_label = "Use selection object"
-    bl_description = "Project selected vertices from other objects"
+    bl_description = "Project selected vertices or use mesh volume from other objects. Selected to Active. Must be in Vertex selection mode."
     bl_options = {'REGISTER','UNDO'}
 
-    accuracy: IntProperty(default = 2,min = 0,max = 4)
+    accuracy: IntProperty(default = 2,min = 0,max = 4,description= "Lower values are more accurate")
     mode: EnumProperty(items = (
-        ('VERTEX','Vertex','Vertex proximity'),
-        ('VOLUME','Volume','Vertices within volume'),
+        ('VERTEX','Vertex','Select using vertex proximity'),
+        ('VOLUME','Volume','Select vertices within mesh volume'),
         ))
 
     @classmethod
@@ -104,51 +105,58 @@ class MESH_OT_selection_object(bpy.types.Operator):
 
             if vector in positions:
                 bm.verts[vert.index].select_set(True)
-                print('MATCH',vector,vert.index)
+                #print('MATCH',vector,vert.index)
 
 
 
-        bmesh.update_edit_mesh(obj_active.data ,True)
+        bmesh.update_edit_mesh(obj_active.data)
 
     def volume(self,context,bm,obj_active):
 
         obj_active_data = obj_active.data
+
+        dg = bpy.context.evaluated_depsgraph_get()
+
         if hasattr(bm.verts, "ensure_lookup_table"): 
             bm.verts.ensure_lookup_table()
 
+        bvh_list = []
 
-        for vert in obj_active_data.vertices:
-            if self.is_inside(context,vert,obj_active):
-                bm.verts[vert.index].select_set(True)
-                print('MATCH',vert.index)
-            else:
-                print('NO MATCH',vert.index)
         
-        bmesh.update_edit_mesh(obj_active_data , True)
-        
-        
-
-    def is_inside(self,context,vert,obj_active):
-        point_local = obj_active.matrix_world @ vert.co
-        dg = bpy.context.evaluated_depsgraph_get()
-
         for mesh_obj in obj_selection:
             #bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
-            bm = bmesh.new()
+            bm_sel = bmesh.new()
 
             #bm = bmesh.from_edit_mesh(mesh_obj.data)
-            
-            bm.from_object(mesh_obj , dg,deform = True)
-            print(bm)
+            bm_sel.from_object(mesh_obj , dg)
+            #print(bm)
 
-            bmesh.ops.transform(bm, matrix= mesh_obj.matrix_world, verts= bm.verts)
+            bmesh.ops.transform(bm_sel, matrix= mesh_obj.matrix_world, verts= bm_sel.verts)
 
-            bvh = BVHTree.FromBMesh(bm, epsilon=self.accuracy * 0.10)
+            bvh_list.append((BVHTree.FromBMesh(bm_sel, epsilon=self.accuracy * 0.001),mesh_obj.dimensions))
 
-            point, normal, _, _ = bvh.find_nearest(point_local)
-            vec = point - Vector(point_local)
-            dot_prod = vec.dot(normal)
-            return dot_prod > 0.0
+
+        for vert in obj_active_data.vertices:
+            point_local = obj_active.matrix_world @ vert.co
+            if self.is_inside(context,point_local,bvh_list):
+                bm.verts[vert.index].select_set(True)
+                #print('MATCH',vert.index)
+           
+        bmesh.update_edit_mesh(obj_active_data)
+        
+
+    def is_inside(self,context,point_local,bvh_list):
+        for bvh,dimensions in bvh_list:
+            point_loc, normal, index, distance = bvh.find_nearest(point_local)
+            vec = point_loc - Vector(point_local)
+            max_dist = max(dimensions)
+            if distance < max_dist:
+                dot_prod = vec.dot(normal)
+
+                if dot_prod > 0.0:
+                    return True
+
+        return False
 
 
 
@@ -165,6 +173,4 @@ def register():
 def unregister():
     bpy.utils.unregister_class(MESH_OT_selection_object)
     bpy.types.VIEW3D_MT_select_edit_mesh.remove(add_to_menu.draw)
-
-
 
