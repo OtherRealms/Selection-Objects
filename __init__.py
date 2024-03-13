@@ -111,40 +111,33 @@ class MESH_OT_selection_object(bpy.types.Operator):
 
         bmesh.update_edit_mesh(obj_active.data)
 
-    def volume(self,context,bm,obj_active):
-
+    def volume(self, context, bm, obj_active):
         obj_active_data = obj_active.data
-
-        dg = bpy.context.evaluated_depsgraph_get()
+        dg = bpy.context.evaluated_depsgraph_get()  # 获取当前的依赖图
 
         if hasattr(bm.verts, "ensure_lookup_table"): 
             bm.verts.ensure_lookup_table()
 
         bvh_list = []
 
-        
         for mesh_obj in obj_selection:
-            #bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)
             bm_sel = bmesh.new()
+            eval_mesh_obj = mesh_obj.evaluated_get(dg)  # 获取经过依赖图计算的对象
+            mesh_data = eval_mesh_obj.to_mesh()  # 从评估后的对象获取网格数据
 
-            #bm = bmesh.from_edit_mesh(mesh_obj.data)
-            bm_sel.from_object(mesh_obj , dg)
-            #print(bm)
+            bm_sel.from_mesh(mesh_data)  # 使用网格数据填充bmesh
+            bmesh.ops.transform(bm_sel, matrix=mesh_obj.matrix_world, verts=bm_sel.verts)
 
-            bmesh.ops.transform(bm_sel, matrix= mesh_obj.matrix_world, verts= bm_sel.verts)
-
-            bvh_list.append((BVHTree.FromBMesh(bm_sel, epsilon=self.accuracy * 0.001),mesh_obj.dimensions))
-
+            bvh_list.append((BVHTree.FromBMesh(bm_sel, epsilon=self.accuracy * 0.001), mesh_obj.dimensions))
+            eval_mesh_obj.to_mesh_clear()  # 清理获取的网格数据，避免内存泄漏
 
         for vert in obj_active_data.vertices:
             point_local = obj_active.matrix_world @ vert.co
-            if self.is_inside(context,point_local,bvh_list):
+            if self.is_inside(context, point_local, bvh_list):
                 bm.verts[vert.index].select_set(True)
-                #print('MATCH',vert.index)
-           
+
         bmesh.update_edit_mesh(obj_active_data)
         
-
     def is_inside(self,context,point_local,bvh_list):
         for bvh,dimensions in bvh_list:
             point_loc, normal, index, distance = bvh.find_nearest(point_local)
